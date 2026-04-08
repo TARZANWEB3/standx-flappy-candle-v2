@@ -109,17 +109,20 @@ async function fbFetch(path,method,body){
     const opts={method:method||'GET',headers:{'Content-Type':'application/json'}};
     if(body)opts.body=JSON.stringify(body);
     const r=await fetch(FB_URL+path+'.json',opts);
-    if(!r.ok)return null;
-    return await r.json();
-  }catch(e){return null}
+    if(!r.ok)return {_error:true,status:r.status};
+    const json=await r.json();
+    return {_ok:true,data:json};
+  }catch(e){return {_error:true,msg:e.message}}
 }
 
 async function loadLB(){
   try{
-    const data=await fbFetch('','GET');
-    if(data!==null){
+    const res=await fbFetch('','GET');
+    if(res&&res._ok){
+      // Firebase respondeu — banco online (mesmo que vazio/null)
       fbOnline=true;
-      lb=Object.values(data||{});
+      const data=res.data;
+      lb=data?Object.values(data):[];
       lb.sort((a,b)=>b.s-a.s);
       try{localStorage.setItem(LS_KEY,JSON.stringify(lb))}catch(e){}
     }else{
@@ -138,14 +141,18 @@ async function addToLB(name,score,dusd){
   const entry={n:name||'ANON',s:score,d:dusd,t:Date.now()};
   try{
     if(fbOnline){
-      await fbFetch('/'+Date.now()+'_'+Math.random().toString(36).slice(2),'PUT',entry);
-      await loadLB();
-    }else{
-      lb.push(entry);
-      lb.sort((a,b)=>b.s-a.s);
-      lb=lb.slice(0,50);
-      try{localStorage.setItem(LS_KEY,JSON.stringify(lb))}catch(e){}
+      const key=Date.now()+'_'+Math.random().toString(36).slice(2);
+      const res=await fbFetch('/'+key,'PUT',entry);
+      if(res&&res._ok){
+        await loadLB();
+        return;
+      }
     }
+    // Fallback local
+    lb.push(entry);
+    lb.sort((a,b)=>b.s-a.s);
+    lb=lb.slice(0,50);
+    try{localStorage.setItem(LS_KEY,JSON.stringify(lb))}catch(e){}
   }catch(e){
     lb.push(entry);
     lb.sort((a,b)=>b.s-a.s);
